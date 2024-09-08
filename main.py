@@ -75,7 +75,7 @@ click_thread.start()
 
 # Function to handle key press events
 def on_press(key):
-    if key == Key.caps_lock:  # Start/stop clicking with 'a'
+    if key == Key.caps_lock:  # Start/stop clicking with 'Caps Lock'
         if click_thread.running:
             click_thread.stop_clicking()
         else:
