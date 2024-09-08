@@ -7,4 +7,3 @@ This project consists of an auto clicker that can be controlled using keyboard s
 - Start/stop clicking with the `Caps Lock` key.
 - Quit the program using the `Q` key.
 - Change the click delay and button (left/right) using a GUI.
-- Settings are saved in a `settings.json` file for future use.
