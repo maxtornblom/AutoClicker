@@ -1,44 +1,42 @@
+import sys
 import time
 import threading
 import json
 from pynput.mouse import Button, Controller
 from pynput.keyboard import Listener, KeyCode, Key
+from gui import launch_gui, quit_gui  # Import the function to launch the GUI
 
-# Global variables to store delay and button settings
-settings_lock = threading.Lock()  # Thread-safe lock for shared variables
+settings_lock = threading.Lock()
 delay = 0.01
 button = Button.left
+file_lock = threading.Lock()
 
+mouse = Controller()
+
+# Flag to indicate if the program should quit
+should_quit = threading.Event()
 
 # Load settings from JSON file
 def load_settings():
     try:
-        with open("settings.json", "r") as f:
-            settings = json.load(f)
-            return settings["delay"], settings["button"]
+        with file_lock:
+            with open('settings.json', 'r') as f:
+                settings = json.load(f)
+                return settings.get('delay', 0.01), settings.get('button', 'left')
     except (FileNotFoundError, KeyError, json.JSONDecodeError):
         print("Error loading settings, using default values.")
-        return 0.01, "left"
+        return 0.01, 'left'
 
-
-# Update settings dynamically
 def update_settings():
     global delay, button
-    while True:
+    while not should_quit.is_set():
         new_delay, new_button_str = load_settings()
-
-        # Convert button string to pynput Button object
-        new_button = Button.left if new_button_str == "left" else Button.right
-
-        # Update settings safely using the lock
+        new_button = Button.left if new_button_str == 'left' else Button.right
         with settings_lock:
             delay = new_delay
             button = new_button
+        time.sleep(1)
 
-        time.sleep(1)  # Check for updates every second
-
-
-# Thread for managing mouse clicks
 class ClickMouse(threading.Thread):
     def __init__(self):
         super(ClickMouse, self).__init__()
@@ -47,52 +45,67 @@ class ClickMouse(threading.Thread):
 
     def start_clicking(self):
         self.running = True
+        print("Start clicking")
 
     def stop_clicking(self):
         self.running = False
+        print("Stop clicking")
 
     def exit(self):
         self.stop_clicking()
         self.program_running = False
+        print("Exit auto-clicker")
 
     def run(self):
         while self.program_running:
             while self.running:
-                with settings_lock:  # Safely access shared settings
+                with settings_lock:
                     current_delay = delay
                     current_button = button
-
                 mouse.click(current_button)
                 time.sleep(current_delay)
             time.sleep(0.1)
 
-
-# Instance of mouse controller is created
-mouse = Controller()
-click_thread = ClickMouse()
-click_thread.start()
-
-
-# Function to handle key press events
 def on_press(key):
-    if key == Key.caps_lock:  # Start/stop clicking with 'Caps Lock'
+    if key == Key.caps_lock:
         if click_thread.running:
             click_thread.stop_clicking()
         else:
             click_thread.start_clicking()
-    elif key == KeyCode(char="q"):  # Quit with 'q'
-        click_thread.exit()
-        listener.stop()
+    elif key == KeyCode(char="q"):
+        quit_program()
+
+def quit_program():
+    should_quit.set()  # Signal the program to quit
+    click_thread.exit()  # Stop the click thread
+    listener.stop()  # Stop the keyboard listener
+    quit_gui()  # Close the GUI window
 
 
-# Start listener for keyboard input
-listener = Listener(on_press=on_press)
-listener.start()
+# Function to run the auto-clicker and GUI simultaneously
+def run_program():
+    global click_thread, gui_thread, listener
+    click_thread = ClickMouse()
+    click_thread.start()
 
-# Start settings update thread
-settings_thread = threading.Thread(target=update_settings)
-settings_thread.daemon = True  # Ensure the settings thread exits with the program
-settings_thread.start()
+    # Start the keyboard listener
+    listener = Listener(on_press=on_press)
+    listener.start()
 
-# Join the listener to wait for key events
-listener.join()
+    # Start the settings update thread
+    settings_thread = threading.Thread(target=update_settings)
+    settings_thread.daemon = True
+    settings_thread.start()
+
+    # Run the GUI in a separate thread
+    gui_thread = threading.Thread(target=launch_gui, args=(quit_program,))
+    gui_thread.start()
+
+    print("Auto-clicker running, press 'Caps Lock' to start/stop, 'q' to quit.")
+    should_quit.wait()  # Wait until should_quit is set
+
+    gui_thread.join()  # Wait for the GUI thread to finish
+    print("Program has fully exited.")
+
+if __name__ == '__main__':
+    run_program()
